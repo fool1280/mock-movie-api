@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+from requests import api
 from tqdm import tqdm
 import os
 import requests
@@ -58,19 +59,22 @@ def getMovies():
     cursor = conn.cursor()
 
     cursor.execute(
-        "CREATE TABLE IF NOT EXISTS movies (id int PRIMARY KEY, original_language varchar, title varchar, overview varchar, release_date varchar, poster_path varchar, vote_average real, genre_id int REFERENCES genres(genre_id));")
+        "CREATE TABLE IF NOT EXISTS movies (movie_id int PRIMARY KEY, original_language varchar, title varchar, overview varchar, release_date varchar, poster_path varchar, vote_average real, genre_id int REFERENCES genres(genre_id));")
     global movies
     for id in genres:
-        for i in tqdm(range(1, 2)):
+        for i in tqdm(range(1, 6)):
             response = requests.get(
                 f'https://api.themoviedb.org/3/discover/movie?api_key={apiKey}&with_genres={id}&page={i}')
             response = response.json()['results']
             for index in tqdm(range(len(response))):
                 movie = response[index]
+                release_date = ""
+                if 'release_date' in movie:
+                    release_date = movie['release_date']
                 if movie['id'] not in movies:
                     movies.add(movie['id'])
                 cursor.execute(
-                    "INSERT INTO movies (id, original_language, title, overview, release_date, poster_path, vote_average, genre_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING;", (movie['id'], movie['original_language'], movie['title'], movie['overview'], movie['release_date'], movie['poster_path'], movie['vote_average'], id))
+                    "INSERT INTO movies (movie_id, original_language, title, overview, release_date, poster_path, vote_average, genre_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (movie_id) DO NOTHING;", (movie['id'], movie['original_language'], movie['title'], movie['overview'], release_date, movie['poster_path'], movie['vote_average'], id))
     conn.commit()
     conn.close()
     cursor.close()
@@ -88,7 +92,7 @@ def getReviews():
     cursor = conn.cursor()
 
     cursor.execute(
-        "CREATE TABLE IF NOT EXISTS reviews (review_id varchar PRIMARY KEY, author varchar, content varchar, movie_id int REFERENCES movies(id));")
+        "CREATE TABLE IF NOT EXISTS reviews (review_id varchar PRIMARY KEY, author varchar, content varchar, movie_id int REFERENCES movies(movie_id));")
     for id in movies:
         for count in tqdm(range(1, 4)):
             response = requests.get(
@@ -98,7 +102,38 @@ def getReviews():
                 for i in tqdm(range(len(response))):
                     review = response[i]
                     cursor.execute("INSERT INTO reviews (review_id, author, content, movie_id) VALUES (%s, %s, %s, %s) ON CONFLICT (review_id) DO NOTHING;",
-                                   (review['id'], review['author'], review['content'], 559))
+                                   (review['id'], review['author'], review['content'], id))
+    conn.commit()
+    conn.close()
+    cursor.close()
+    pass
+
+
+def getActors():
+    count = 0
+    global movies
+    conn = psycopg2.connect(
+        host="localhost",
+        database=database,
+        user=user,
+        password=password)
+    gender_mapping = {1: "Female", 2: "Male",
+                      0: "Not specified", 3: "Non-binary"}
+    cursor = conn.cursor()
+    cursor.execute(
+        "CREATE TABLE IF NOT EXISTS actors (actor_id varchar PRIMARY KEY, name varchar, gender varchar, movie_id int REFERENCES movies(movie_id));")
+    for id in movies:
+        response = requests.get(
+            f'https://api.themoviedb.org/3/movie/{id}/credits?api_key={apiKey}&language=en-US')
+        response = response.json()['cast']
+        for cast in response:
+            name = cast['name']
+            actor_id = cast['id']
+            gender = gender_mapping[cast['gender']]
+            movie_id = id
+            cursor.execute("INSERT INTO actors (actor_id, name, gender, movie_id) VALUES (%s, %s, %s, %s) ON CONFLICT (actor_id) DO NOTHING;",
+                           (actor_id, name, gender, movie_id))
+            break
     conn.commit()
     conn.close()
     cursor.close()
@@ -108,3 +143,4 @@ def getReviews():
 getGenres()
 getMovies()
 getReviews()
+getActors()
