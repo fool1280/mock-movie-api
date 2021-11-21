@@ -121,7 +121,9 @@ def getActors():
                       0: "Not specified", 3: "Non-binary"}
     cursor = conn.cursor()
     cursor.execute(
-        "CREATE TABLE IF NOT EXISTS actors (actor_id varchar PRIMARY KEY, name varchar, gender varchar, movie_id int REFERENCES movies(movie_id));")
+        "CREATE TABLE IF NOT EXISTS actors (actor_id int PRIMARY KEY, name varchar, gender varchar);")
+    cursor.execute(
+        "CREATE TABLE IF NOT EXISTS acts_in (actor_id int REFERENCES actors(actor_id), movie_id int REFERENCES movies(movie_id), PRIMARY KEY(actor_id, movie_id));")
     for id in movies:
         response = requests.get(
             f'https://api.themoviedb.org/3/movie/{id}/credits?api_key={apiKey}&language=en-US')
@@ -131,9 +133,10 @@ def getActors():
             actor_id = cast['id']
             gender = gender_mapping[cast['gender']]
             movie_id = id
-            cursor.execute("INSERT INTO actors (actor_id, name, gender, movie_id) VALUES (%s, %s, %s, %s) ON CONFLICT (actor_id) DO NOTHING;",
-                           (actor_id, name, gender, movie_id))
-            break
+            cursor.execute("INSERT INTO actors (actor_id, name, gender) VALUES (%s, %s, %s) ON CONFLICT (actor_id) DO NOTHING;",
+                           (actor_id, name, gender))
+            cursor.execute("INSERT INTO acts_in (actor_id, movie_id) VALUES (%s, %s) ON CONFLICT (actor_id, movie_id) DO NOTHING;",
+                           (actor_id, movie_id))
     conn.commit()
     conn.close()
     cursor.close()
